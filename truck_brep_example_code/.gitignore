@@ -1,0 +1,5 @@
+/target/
+# Keep output directory versioned but ignore generated exports
+/output/*
+!/output/.gitkeep
+.DS_Store

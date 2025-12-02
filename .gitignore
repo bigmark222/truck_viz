@@ -13,3 +13,16 @@
 
 # MacOS metadata
 .DS_Store
+.DS_Store
+
+# Cargo build outputs
+truck_brep_example_code/target/
+truck_viewer/target/
+
+# Generated assets
+truck_brep_example_code/output/
+truck_viewer/assets/
+
+# Backed-up submodule metadata
+truck_brep_example_code/.git.bak/
+truck_viewer/.git.bak/
