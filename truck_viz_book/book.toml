@@ -1,0 +1,6 @@
+[book]
+title = "Building truck_viz"
+description = "Step-by-step notes on assembling the truck_viz workspace."
+authors = ["truck_viz team"]
+language = "en"
+src = "src"
