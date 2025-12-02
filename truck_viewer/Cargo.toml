@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 bevy = { version = "0.17", features = ["file_watcher"] }
 tobj = "4"
+bevy_rapier3d = { version = "0.32.0" }
+bevy-inspector-egui = "0.35"

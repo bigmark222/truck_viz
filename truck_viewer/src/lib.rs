@@ -1,4 +1,13 @@
-use bevy::{gltf::GltfAssetLabel, input::mouse::MouseMotion, prelude::*};
+use bevy::{
+    gltf::GltfAssetLabel,
+    input::mouse::MouseMotion,
+    math::primitives::{Cuboid, Plane3d, Sphere},
+    prelude::*,
+    window::PrimaryWindow,
+};
+use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
+use bevy_rapier3d::prelude::*;
+use bevy_rapier3d::render::DebugRenderContext;
 
 #[derive(Component)]
 struct FlyCamera {
@@ -16,15 +25,37 @@ impl Default for FlyCamera {
 }
 pub fn build_app() -> App {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Truck mesh with Bevy".into(),
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Truck mesh with Bevy".into(),
+                ..Default::default()
+            }),
             ..Default::default()
         }),
-        ..Default::default()
-    }))
+        RapierPhysicsPlugin::<NoUserData>::default(),
+        RapierDebugRenderPlugin::default().disabled(),
+        EguiPlugin::default(),
+        WorldInspectorPlugin::new(),
+    ))
+    .register_type::<SimControls>()
+    .init_resource::<CursorRay>()
+    .init_resource::<Selection>()
+    .init_resource::<SimControls>()
+    .init_resource::<SpawnQueue>()
     .add_systems(Startup, setup)
-    .add_systems(Update, (camera_movement, model_rotation, force_unlit_materials));
+    .add_systems(
+        Update,
+        (
+            camera_movement,
+            model_rotation,
+            force_unlit_materials,
+            update_cursor_ray,
+            click_select,
+            apply_sim_controls,
+            process_spawn_queue,
+        ),
+    );
     app
 }
 
@@ -34,10 +65,52 @@ pub fn run() {
 
 #[derive(Component)]
 struct ModelRoot;
+#[derive(Component)]
+struct MainCamera;
+#[derive(Component)]
+struct Selectable;
+
+#[derive(Resource, Default)]
+struct CursorRay {
+    origin: Vec3,
+    dir: Vec3,
+    valid: bool,
+}
+
+#[derive(Resource, Default)]
+struct Selection {
+    selected: Option<Entity>,
+}
+
+#[derive(Resource, Reflect)]
+#[reflect(Resource)]
+struct SimControls {
+    physics_on: bool,
+    gravity_on: bool,
+    debug_draw: bool,
+}
+
+impl Default for SimControls {
+    fn default() -> Self {
+        Self {
+            physics_on: true,
+            gravity_on: true,
+            debug_draw: false,
+        }
+    }
+}
+
+#[derive(Default, Resource)]
+struct SpawnQueue {
+    cubes: u32,
+    spheres: u32,
+}
 
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.insert_resource(ClearColor(Color::srgb(0.06, 0.06, 0.08)));
     commands.insert_resource(AmbientLight {
@@ -53,6 +126,7 @@ fn setup(
             Camera3d::default(),
             Transform::from_xyz(5.0, 4.0, 5.0).looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
             FlyCamera::default(),
+            MainCamera,
         ))
         .with_children(|parent| {
             // Light follows the camera orientation so shaded faces shift as you orbit.
@@ -124,10 +198,30 @@ fn setup(
     let scene_path = GltfAssetLabel::Scene(0).from_asset("organic.gltf");
     let scene: Handle<Scene> = asset_server.load(scene_path);
     commands.spawn((
+        RigidBody::Dynamic,
+        // Rough bounding box; swap for a mesh collider once loaded if needed.
+        Collider::cuboid(1.5, 1.0, 3.0),
+        Selectable,
         SceneRoot(scene),
         ModelRoot,
         Transform::default(),
         GlobalTransform::default(),
+    ));
+
+    // Simple physics ground so the model has a floor to rest on.
+    commands.spawn((
+        Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().size(40.0, 40.0)))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.05, 0.05, 0.06),
+            ..Default::default()
+        })),
+        Transform::from_xyz(0.0, -0.05, 0.0),
+        GlobalTransform::default(),
+        Visibility::default(),
+        InheritedVisibility::default(),
+        RigidBody::Fixed,
+        Collider::cuboid(20.0, 0.05, 20.0),
+        Selectable,
     ));
 }
 
@@ -186,6 +280,128 @@ fn camera_movement(
             transform.translation += direction.normalize() * speed * time.delta_secs();
         }
     }
+}
+
+fn update_cursor_ray(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut cursor_ray: ResMut<CursorRay>,
+) {
+    cursor_ray.valid = false;
+    let Some(window) = windows.iter().next() else {
+        return;
+    };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let Some((camera, transform)) = cameras.iter().next() else {
+        return;
+    };
+
+    if let Ok(ray) = camera.viewport_to_world(transform, cursor_pos) {
+        cursor_ray.origin = ray.origin;
+        cursor_ray.dir = ray.direction.into();
+        cursor_ray.valid = true;
+    }
+}
+
+fn click_select(
+    buttons: Res<ButtonInput<MouseButton>>,
+    cursor_ray: Res<CursorRay>,
+    mut selection: ResMut<Selection>,
+    rapier_context: ReadRapierContext<With<DefaultRapierContext>>,
+    pickables: Query<(), With<Selectable>>,
+) {
+    if !buttons.just_pressed(MouseButton::Left) || !cursor_ray.valid {
+        return;
+    }
+
+    let Ok(context) = rapier_context.single() else {
+        return;
+    };
+
+    if let Some((entity, _toi)) = context.cast_ray(
+        cursor_ray.origin,
+        cursor_ray.dir,
+        10_000.0,
+        true,
+        QueryFilter::default(),
+    ) {
+        if pickables.get(entity).is_ok() {
+            selection.selected = Some(entity);
+            info!("Selected entity {:?}", entity);
+            return;
+        }
+    }
+
+    selection.selected = None;
+    info!("Cleared selection");
+}
+
+fn apply_sim_controls(
+    controls: Res<SimControls>,
+    mut configs: Query<&mut RapierConfiguration, With<DefaultRapierContext>>,
+    mut debug_render: ResMut<DebugRenderContext>,
+) {
+    if let Ok(mut config) = configs.single_mut() {
+        config.physics_pipeline_active = controls.physics_on;
+        config.gravity = if controls.gravity_on {
+            Vec3::new(0.0, -9.81, 0.0)
+        } else {
+            Vec3::ZERO
+        };
+    }
+
+    debug_render.enabled = controls.debug_draw;
+}
+
+fn process_spawn_queue(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut queue: ResMut<SpawnQueue>,
+) {
+    if queue.cubes == 0 && queue.spheres == 0 {
+        return;
+    }
+
+    let spawn_height = 3.0;
+    for _ in 0..queue.cubes {
+        commands.spawn((
+            Mesh3d(meshes.add(Mesh::from(Cuboid::default()))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.35, 0.45, 0.65),
+                ..Default::default()
+            })),
+            Transform::from_xyz(0.0, spawn_height, 0.0),
+            GlobalTransform::default(),
+            Visibility::default(),
+            InheritedVisibility::default(),
+            RigidBody::Dynamic,
+            Collider::cuboid(0.5, 0.5, 0.5),
+            Selectable,
+        ));
+    }
+
+    for _ in 0..queue.spheres {
+        commands.spawn((
+            Mesh3d(meshes.add(Mesh::from(Sphere { radius: 0.6 }))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.55, 0.45, 0.35),
+                ..Default::default()
+            })),
+            Transform::from_xyz(0.0, spawn_height, 1.5),
+            GlobalTransform::default(),
+            Visibility::default(),
+            InheritedVisibility::default(),
+            RigidBody::Dynamic,
+            Collider::ball(0.6),
+            Selectable,
+        ));
+    }
+
+    queue.cubes = 0;
+    queue.spheres = 0;
 }
 
 fn model_rotation(
