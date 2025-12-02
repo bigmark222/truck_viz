@@ -1,0 +1,15 @@
+# Build outputs
+/target
+/truck_viewer/target
+/truck_brep_example_code/target
+
+# Generated assets and symlinks
+/truck_viewer/assets
+/truck_brep_example_code/output
+*.gltf
+*.obj
+*.bin
+*.step
+
+# MacOS metadata
+.DS_Store
