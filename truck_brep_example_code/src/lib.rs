@@ -1,4 +1,7 @@
-use std::{fs, io, path::{Path, PathBuf}};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use serde_json::json;
 use truck_meshalgo::prelude::*;
@@ -25,6 +28,9 @@ pub use bottle::bottle;
 
 pub mod organic;
 pub use organic::organic;
+
+pub mod sphere;
+pub use sphere::sphere;
 
 /// Helper to compress modeling shapes into STEP-compatible data.
 pub trait StepCompress {
@@ -88,7 +94,11 @@ fn adaptive_triangulation_tolerance(shape: &impl MeshableShape) -> f64 {
     let dz = max[2] - min[2];
     let diag = (dx * dx + dy * dy + dz * dz).sqrt();
 
-    let span = if diag.is_finite() && diag > 0.0 { diag } else { 1.0 };
+    let span = if diag.is_finite() && diag > 0.0 {
+        diag
+    } else {
+        1.0
+    };
     // Target ~0.025% of span for a touch more smoothness.
     let tol = span * 0.00025;
     tol.clamp(MIN_TRIANGULATION_TOLERANCE, MAX_TRIANGULATION_TOLERANCE)
@@ -109,7 +119,10 @@ pub fn save_obj(shape: &impl MeshableShape, path: impl AsRef<Path>) -> io::Resul
 /// Convert a Wavefront OBJ into a single-mesh glTF file.
 /// If `output_path` ends with `.glb`, a binary glTF is produced; otherwise a `.gltf`
 /// JSON file is written alongside a `.bin` buffer of the same name.
-pub fn convert_obj_to_gltf(obj_path: impl AsRef<Path>, output_path: impl AsRef<Path>) -> io::Result<()> {
+pub fn convert_obj_to_gltf(
+    obj_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> io::Result<()> {
     let obj_path = obj_path.as_ref();
     let output_path = output_path.as_ref();
 
@@ -324,8 +337,8 @@ pub fn convert_obj_to_gltf(obj_path: impl AsRef<Path>, output_path: impl AsRef<P
             fs::create_dir_all(parent)?;
         }
 
-        let mut json_bytes = serde_json::to_vec(&root)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let mut json_bytes =
+            serde_json::to_vec(&root).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         while json_bytes.len() % 4 != 0 {
             json_bytes.push(b' ');
         }

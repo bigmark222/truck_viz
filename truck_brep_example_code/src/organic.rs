@@ -6,7 +6,12 @@ pub fn organic() -> Solid {
     fn circle_wire(center: Point3, radius: f64) -> Wire {
         let v = builder::vertex(center + Vector3::new(radius, 0.0, 0.0));
         builder::translated(
-            &builder::rsweep(&v, center, Vector3::unit_y(), Rad(std::f64::consts::PI * 2.0)),
+            &builder::rsweep(
+                &v,
+                center,
+                Vector3::unit_y(),
+                Rad(std::f64::consts::PI * 2.0),
+            ),
             Vector3::new(0.0, 0.0, 0.0),
         )
     }
@@ -23,13 +28,16 @@ pub fn organic() -> Solid {
 
         // Loft between consecutive wires.
         for pair in wires.windows(2) {
-            let shell = builder::try_wire_homotopy(&pair[0], &pair[1]).expect("failed to loft segment");
+            let shell =
+                builder::try_wire_homotopy(&pair[0], &pair[1]).expect("failed to loft segment");
             faces.extend(shell.into_iter());
         }
 
         // Caps: bottom faces should point -Y, top faces +Y.
-        let bottom_face = builder::try_attach_plane(&vec![wires.first().unwrap().clone()]).expect("cap bottom");
-        let top_face = builder::try_attach_plane(&vec![wires.last().unwrap().clone()]).expect("cap top");
+        let bottom_face =
+            builder::try_attach_plane(&vec![wires.first().unwrap().clone()]).expect("cap bottom");
+        let top_face =
+            builder::try_attach_plane(&vec![wires.last().unwrap().clone()]).expect("cap top");
         faces.push(bottom_face.inverse());
         faces.push(top_face);
 
@@ -61,7 +69,7 @@ pub fn organic() -> Solid {
         (Point3::new(-1.6, 5.5, -0.5), 0.18),
     ];
     let shoot_b = tube(&shoot_b_path);
-    
+
     // Merge shells from all parts.
     let mut shells = Vec::new();
     shells.extend(stem.boundaries().clone());
