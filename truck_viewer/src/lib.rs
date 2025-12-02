@@ -195,7 +195,7 @@ fn setup(
 
     // Let Bevy load and watch the GLTF; with BEVY_ASSET_WATCHER=poll, edits under assets/ hot-reload.
     // Change the file name below (e.g., to "cube.gltf" or "bottle.gltf") to view a different export.
-    let scene_path = GltfAssetLabel::Scene(0).from_asset("organic.gltf");
+    let scene_path = GltfAssetLabel::Scene(0).from_asset("sphere.gltf");
     let scene: Handle<Scene> = asset_server.load(scene_path);
     commands.spawn((
         RigidBody::Dynamic,
