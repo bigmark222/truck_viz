@@ -13,6 +13,7 @@ Combined workspace with two crates:
    cd truck_viz
    ln -s ../truck_brep_example_code/output truck_viewer/assets
    ```
+   On Windows without symlink support, copy or set up a directory junction instead (e.g., `mklink /J truck_viewer\\assets ..\\truck_brep_example_code\\output` from an elevated cmd).
    If the symlink already exists, you can recreate it with `ln -sfn ...`.
 
 2) Generate some geometry (writes into `truck_brep_example_code/output/`):
@@ -28,6 +29,10 @@ Combined workspace with two crates:
    BEVY_ASSET_WATCHER=poll cargo run
    ```
    The viewer loads a GLTF named in `truck_viewer/src/lib.rs` (default: `cube.gltf`). Change that filename if you want to view a different export.
+
+![Make_Chonky](media/increase_chonky.gif)
+
+![Add_Arms](media/add_arms.gif)
 
 ## Notes
 - Generated assets (`output/`, `truck_viewer/assets`) are gitignored; re-run the examples after fresh clones.
